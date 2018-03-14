@@ -3,9 +3,9 @@
 本项目是一个关于各种事务（Transaction）技术和模式的学习项目。
 
 * [本地事务][local.md]
-* [两阶段提交分布式事务][2pc.md]
-* [TCC分布式事务][tcc.md]
-* [Saga分布式事务][saga.md]
+* [2PC][2pc.md]
+* [TCC][tcc.md]
+* [Saga][saga.md]
 
 [local.md]: local.md
 [2pc.md]: 2pc.md
