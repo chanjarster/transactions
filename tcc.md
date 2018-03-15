@@ -23,7 +23,7 @@ TCC模式在于应用程序而非数据库，因此其所保证的ACID实际上�
 
 ### Consistency
 
-TCC保证的是[最终一致性][wiki-eventual-consistency]，但这个保证也不是那么强，而是依赖于应用程序代码没有BUG。
+TCC保证的是“最终一致性”，但这个保证也不是那么强，而是依赖于应用程序代码没有BUG。
 
 而且TCC是分步执行的，所以在执行过程中会出现违反一致性的结果。
 
@@ -63,7 +63,10 @@ TCC的Durability也是依赖于各个应用程序，要求各个应用程序正�
 * [Paper - Rest TCC][pdf-tcc]
 * [Presentation - Transactions for the REST of Us][presentation-transactions-http-rest]
 * [Article - Transactions for the REST of Us][article-transactions-http-rest]
+* [Article - Atomic Distributed Transactions: a RESTful Design][article-tcc-wsrest]
 * [大规模SOA系统中的分布事务处事_程立][slides-tcc-alibaba] 
+* [深入解读微服务架构下分布式事务解决方案][article-microservice-transactions-in-depth]
+* [分布式事务之说说TCC事务][article-talk-about-tcc]
 
 [2pc.md]: 2pc.md
 [local.md]: local.md
@@ -71,14 +74,6 @@ TCC的Durability也是依赖于各个应用程序，要求各个应用程序正�
 [article-transactions-http-rest]: https://dzone.com/articles/transactions-for-the-rest-of-us
 [pdf-tcc]: http://design.inf.usi.ch/sites/default/files/biblio/rest-tcc.pdf
 [slides-tcc-alibaba]: https://wenku.baidu.com/view/be946bec0975f46527d3e104.html
-[wiki-eventual-consistency]: https://en.wikipedia.org/wiki/Eventual_consistency
-
-
-Spring Cloud TCC示例
-https://github.com/prontera/spring-cloud-rest-tcc
-
-Atomikos - TCC for transaction management across microservices 
-https://www.atomikos.com/Blog/TCCForTransactionManagementAcrossMicroservices
-
-Atomikos - Transactions For REST API docs
-https://www.atomikos.com/Blog/TransactionsForRestApiDocs
+[article-microservice-transactions-in-depth]: https://www.jianshu.com/p/f04cc1a696b4
+[article-talk-about-tcc]: https://www.toutiao.com/a6340518979443032322/
+[article-tcc-wsrest]: http://www.pautasso.info/biblio-pdf/tcc-wsrest2014.pdf

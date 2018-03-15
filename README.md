@@ -4,10 +4,12 @@
 
 * [本地事务][local.md]
 * [2PC][2pc.md]
+* [BASE][base.md]
 * [TCC][tcc.md]
 * [Saga][saga.md]
 
 [local.md]: local.md
 [2pc.md]: 2pc.md
+[base.md]: base.md
 [tcc.md]: tcc.md
 [saga.md]: saga.md
