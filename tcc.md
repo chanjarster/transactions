@@ -1,41 +1,58 @@
 # TCC
 
-在前一篇文章中讲到[2PC][2pc.md]是针对跨数据库的事务的一种解决方案，不过随着SOA、微服务的兴起与发展，2PC已经不能满足需求了：
+在前一篇文章中讲到了[BASE模式][base.md]，这种模式可以应用在单库or跨库事务的场景下。事实上BASE模式不仅仅局限于数据库层面，还可以应用于分布式系统，这类分布式系统最典型的例子就是电商平台，它们有以下几个特征：
 
-1. 大量兴起兴起的NoSQL不支持XA
-2. 各个应用之间的数据库是分离的，不允许A应用插手到B应用的数据库
+1. SOA化/微服务化：单体应用拆分成多个小应用，。
+2. 数据库的各种拆分技术的运用：分表、分库、分区。
+3. 大量NoSQL数据库的兴起。
+4. 应用之间的通信手段并非直接读数据库：RESTful、RPC、消息中间件等。
+5. 大量跨应用事务的出现。
 
-于是就有人提出了[TCC模式][presentation-transactions-http-rest]（Try、Confirm、Cancel），在国内TCC因阿里巴巴的推广而广为人知。
+在这种场景下，[2PC][2pc.md]（及XA）已经无法满足需求，因为它：
 
-## 算法介绍
+1. 性能低下，2PC协议是阻塞式的。当协调的数据库越来越多时，性能无法接受。
+2. 无法水平扩展以提升性能，只能靠垂直扩展（提升硬件）——更快的CPU、更快更大的硬盘、更大更快的内存——但是这样很贵，并且很容易遇到极限。
+3. 染指其他数据库。
+4. 依赖于数据库是否支持2PC（XA）。
 
-## 不一样的ACID
+而BASE只解决最后提交的问题，不能解决诸如在[上一篇文章][base.md]中最后提到的如何保证刷卡消费不透支的问题.于是就有人提出了[TCC模式][presentation-transactions-http-rest]（Try、Confirm、Cancel），这一模式在国内因阿里巴巴的推广而广为人知。
 
-TCC模式在于应用程序而非数据库，因此其所保证的ACID实际上和[本地事务][local.md]所保证的并不一样。
+## 协议介绍
 
-### Atomicity
+### 三种动作
 
-实际上TCC并不能保证和本地事务一样的Atomicity，它只能保证最终Atomicity，或者从业务层面看起来像Atomicity，因为：
+TCC是Try、Confirm、Cancel的简称，它们分别的职责是：
 
-1. TCC只要一开始，就修改了数据库，违反了all or nothing
-2. TCC是分步骤提交的，不是一次提交，而是各个应用程序有自己的本地事务提交
-3. TCC执行过程中崩溃了，那么就会出现部分成功/失败的结果，违反了indivisible
+* Try：负责做业务检查（比如看看余额是否足够）、预留资源（比如新建一条状态=PENDING的订单）
+* Confirm：负责落地Try所预留的资源（比如扣费、把订单状态变成COMPLETED）
+* Cancel：负责撤销Try所预留的资源（比如把订单状态变成CANCELED）
 
-### Consistency
+可以看到TCC是对于BASE的一种扩充，增加了业务检查和撤销事务的功能。
 
-TCC保证的是“最终一致性”，但这个保证也不是那么强，而是依赖于应用程序代码没有BUG。
+### 状态变化
 
-而且TCC是分步执行的，所以在执行过程中会出现违反一致性的结果。
+TCC的每一个动作都会造成状态的变化，详见这张图：
 
-### Isolation
+![TCC的状态](images/tcc-state-machine.png)
 
-TCC的Try阶段做的一般是预留操作，比如新建一个PENDING状态的订单，不过这条订单记录也是进入数据库并提交的（本地事务）。
+### 流程
 
-应用程序可以在代码层面来对PENDING状态的订单做特殊处理（比如在报表逻辑里排除PENDING），但还是那句话，这依赖于程序代码没有BUG。
+下面称呼发起事务的应用为“发起方”，接受请求的应用为“参与方”
 
-### Durability
+1. 发起方发起Try到参与方
+2. 参与方执行Try，状态变为预留
+3. 发起方发起Confirm到参与方
 
-TCC的Durability也是依赖于各个应用程序，要求各个应用程序正确的实现了业务逻辑。
+### 异常处理
+
+
+下面介绍TCC的流程：
+
+1. 
+
+TODO
+
+
 
 ## 要点
 
@@ -68,6 +85,7 @@ TCC的Durability也是依赖于各个应用程序，要求各个应用程序正�
 * [深入解读微服务架构下分布式事务解决方案][article-microservice-transactions-in-depth]
 * [分布式事务之说说TCC事务][article-talk-about-tcc]
 
+[base.md]: base.md
 [2pc.md]: 2pc.md
 [local.md]: local.md
 [presentation-transactions-http-rest]: https://www.infoq.com/presentations/Transactions-HTTP-REST
