@@ -1,83 +1,79 @@
-# 分布式事务Pattern - Saga
+# Saga
 
-Saga是一种分布式事务模式，该模式和传统XA模式不同。区别点在于：
+1987年普林斯顿大学的Hector Garcia-Molina和Kenneth Salem发表了一篇Paper [Sagas][paper-sagas]，讲述的是如何处理long lived transaction（长活事务）。听起来是不是觉得和分布式事务很像？没错，下面来看看这个来自1987年的解决方案是如何启发当今的分布式事务问题的。
 
-1. XA模式是直接连接多个数据库的模式，而Saga则是连接多个服务
-2. XA模式要求数据库也支持事务，而Saga则不要求
-3. XA模式是[ACID][wiki-acid]的，而Saga模式本身不保证ACID
+## 协议介绍
 
-所以，虽然说Saga是一种分布式事务模式，但它和关系型数据库的“事务”的概念并不相同。准确地说Saga是一种协调机制，协调各个服务完成一件业务，并且保证其结果最终是一致的：要么全成功，要么全失败。
+Saga的组成：
 
-## 机制
+* 每个Saga由一系列sub-transaction T<sub>i</sub> 组成
+* 每个T<sub>i</sub> 都有对应的补偿动作C<sub>i</sub>，补偿动作用于撤销T<sub>i</sub>造成的结果
 
-## 不一样的ACID
+可以看到，和[TCC][tcc.md]相比，Saga没有“预留”动作，它的T<sub>i</sub>就是直接提交到库。
 
-Saga模式和[TCC][tcc.md]一样，它只能保证ACD，而且对于ACD的保证与[本地事务][local.md]所保证的并不一样。
+Saga的执行顺序有两种：
 
-### Atomicity
+* T<sub>1</sub>, T<sub>2</sub>, T<sub>3</sub>, ..., T<sub>n</sub>
+* T<sub>1</sub>, T<sub>2</sub>, ..., T<sub>j</sub>, C<sub>j</sub>,..., C<sub>2</sub>, C<sub>1</sub>，其中0 < j < n
 
-实际上Saga并不能保证和本地事务一样的Atomicity，它只能保证最终Atomicity，或者从业务层面看起来像Atomicity，因为：
+Saga定义了两种恢复策略：
 
-1. Saga只要一开始，就修改了数据库，违反了all or nothing
-2. Saga是分步骤提交的，不是一次提交，而是各个应用程序有自己的本地事务提交
-3. Saga执行过程中崩溃了，那么就会出现部分成功/失败的结果，违反了indivisible
+* backward recovery，向后恢复，即上面提到的第二种执行顺序，其中j是发生错误的sub-transaction，这种做法的效果是撤销掉之前所有成功的sub-transation，使得整个Saga的执行结果撤销。
+* forward recovery，向前恢复，适用于必须要成功的场景，执行顺序是类似于这样的：T<sub>1</sub>, T<sub>2</sub>, ..., T<sub>j</sub>(失败), T<sub>j</sub>(重试),..., T<sub>n</sub>，其中j是发生错误的sub-transaction。该情况下不需要C<sub>i</sub>。
 
-### Consistency
+## 对于ACID的保证
 
-Saga保证的是[最终一致性][wiki-eventual-consistency]，但这个保证也不是那么强，而是依赖于应用程序代码没有BUG。
+Saga对于ACID的保证和TCC一样：
 
-而且Saga是分步执行的，所以在执行过程中会出现违反一致性的结果。
+* A，正常情况下保证。
+* C，在某个时间点，会出现A库和B库的数据违反一致性要求的情况，但是最终是一致的。
+* I，在某个时间点，A事务能够读到B事务部分提交的结果。
+* D，和本地事务一样，只要commit则数据被持久。
 
-### Isolation
+## 和TCC对比
 
-Saga和[TCC][tcc.md]不一样，他没有Try阶段，因此它无法提供任何形式/强度的Isolation。
+Saga相比TCC的缺点是缺少预留动作，导致补偿动作的实现比较麻烦：T<sub>i</sub>就是commit，比如一个业务是发送邮件，在TCC模式下，先保存草稿（Try）再发送（Confirm），撤销的话直接删除草稿（Cancel）就行了。而Saga则就直接发送邮件了（T<sub>i</sub>），如果要撤销则得再发送一份邮件说明撤销（C<sub>i</sub>），实现起来有一些麻烦。
 
-### Durability
+如果把上面的发邮件的例子换成：A服务在完成T<sub>i</sub>后立即发送Event到ESB（企业服务总线，可以认为是一个消息中间件），下游服务监听到这个Event做自己的一些工作然后再发送Event到ESB，如果A服务执行补偿动作C<sub>i</sub>，那么整个补偿动作的层级就很深。
 
-Saga的Durability也是依赖于各个应用程序，要求各个应用程序正确的实现了业务逻辑。
+不过没有预留动作也可以认为是优点：
 
-## 要点
+* 有些业务很简单，套用TCC需要修改原来的业务逻辑，而Saga只需要添加一个补偿动作就行了。
+* TCC最少通信次数为2n，而Saga为n（n=sub-transaction的数量）。
+* 有些第三方服务没有Try接口，TCC模式实现起来就比较tricky了，而Saga则很简单。
+* 没有预留动作就意味着不必担心资源释放的问题，异常处理起来也更简单（请对比Saga的恢复策略和TCC的异常处理）。
 
-* Saga模式在于应用程序而非数据库
-* Saga模式依赖于各应用程序代码的正确实现，每个应用程序自我保证ACD（可以采用本地事务）
+## 实现Saga的注意事项
 
-对于do、compensate的要求：
+对于服务来说，实现Saga有以下这些要求：
 
-* 要求幂等
-* 要求两者可交换，即可颠倒次序执行，如compensate在前do在后
-* compensate动作要一定可以成功，否则会需要人工介入
+1. T<sub>i</sub>和C<sub>i</sub>是幂等的。
+1. C<sub>i</sub>必须是能够成功的，如果无法成功则需要人工介入。
+1. T<sub>i</sub> - C<sub>i</sub>和C<sub>i</sub> - T<sub>i</sub>的执行结果必须是一样的：sub-transaction被撤销了。
 
-优点：
+第一点要求T<sub>i</sub>和C<sub>i</sub>是幂等的，举个例子，假设在执行T<sub>i</sub>的时候超时了，此时我们是不知道执行结果的，如果采用forward recovery策略就会再次发送T<sub>i</sub>，那么就有可能出现T<sub>i</sub>被执行了两次，所以要求T<sub>i</sub>幂等。如果采用backward recovery策略就会发送C<sub>i</sub>，而如果C<sub>i</sub>也超时了，就会尝试再次发送C<sub>i</sub>，那么就有可能出现C<sub>i</sub>被执行两次，所以要求C<sub>i</sub>幂等。
 
-* 需改造应用程序逻辑
-* 相比TCC，最好情况下，只需要2N次通信（N=服务数量）
+第二点要求C<sub>i</sub>必须能够成功，这个很好理解，因为，如果C<sub>i</sub>不能执行成功就意味着整个Saga无法完全撤销，这个是不允许的。但总会出现一些特殊情况比如C<sub>i</sub>的代码有bug、服务长时间崩溃等，这个时候就需要人工介入了。
 
-缺点：
+第三点乍看起来比较奇怪，举例说明，还是考虑T<sub>i</sub>执行超时的场景，我们采用了backward recovery，发送一个C<sub>i</sub>，那么就会有三种情况：
 
-* 不提供任何形式/强度的隔离性
+1. T<sub>i</sub>的请求丢失了，服务之前没有、之后也不会执行T<sub>i</sub>
+2. T<sub>i</sub>在C<sub>i</sub>之前执行
+3. C<sub>i</sub>在T<sub>i</sub>之前执行
 
-
-## 缺点
-
-## 注意
+对于第1种情况，容易处理。对于第2、3种情况，则要求T<sub>i</sub>和C<sub>i</sub>是可交换的（commutative)，并且其最终结果都是sub-transaction被撤销。
 
 ## 参考资料
 
+* [Paper - Sagas][paper-sagas]
 * [Eventual Data Consistency Solution in ServiceComb - part 1][service-comb-saga-blog-1]
 * [Eventual Data Consistency Solution in ServiceComb - part 2][service-comb-saga-blog-2]
 * [Eventual Data Consistency Solution in ServiceComb - part 3][service-comb-saga-blog-3]
-* [Paper - Sagas][paper-sagas]
-* [Wiki - Eventual Consistency][wiki-eventual-consistency]
-* [Wiki - CAP theorem][wiki-cap]
-* [Pattern: Saga][site-pattern-saga]
+* [Distributed Sagas: A Protocol for Coordinating Microservices][presentation-saga]
 
-[local.md]: local.md
+[paper-sagas]: ftp://ftp.cs.princeton.edu/reports/1987/070.pdf
 [tcc.md]: tcc.md
 [service-comb-saga-blog-1]: https://servicecomb.incubator.apache.org/docs/distributed_saga_1/
 [service-comb-saga-blog-2]: https://servicecomb.incubator.apache.org/docs/distributed_saga_2/
 [service-comb-saga-blog-3]: https://servicecomb.incubator.apache.org/docs/distributed_saga_3/
-[paper-sagas]: https://www.cs.cornell.edu/andru/cs711/2002fa/reading/sagas.pdf
-[wiki-acid]: https://en.wikipedia.org/wiki/ACID
-[wiki-eventual-consistency]: https://en.wikipedia.org/wiki/Eventual_consistency
-[wiki-cap]: https://en.wikipedia.org/wiki/CAP_theorem
-[site-pattern-saga]: http://microservices.io/patterns/data/saga.html
+[presentation-saga]: https://www.youtube.com/watch?v=1H6tounpnG8
